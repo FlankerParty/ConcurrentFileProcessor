@@ -30,7 +30,8 @@ public class Processor
                 _debugLevelCnt[parts[0]] = _debugLevelCnt.GetValueOrDefault(parts[0]) + 1;
                 if (parts.Length < 3)
                     continue;
-                _userCnt[parts[2]]++;
+                string name = parts[2].Split("=")[1];
+                _userCnt[name] = _userCnt.GetValueOrDefault(name) + 1;
             }
         }
         catch (OperationCanceledException oce)

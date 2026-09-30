@@ -1,10 +1,12 @@
 ﻿using System.Threading.Channels;
+using System.Text.Json.Nodes;
 
 namespace ConcurrentFileProcessor;
 
 public static class Program
 {
     private static string _outputPath;
+    private static string _inputPath;
     private static Task _process;
     private static FileSystemWatcher _watcher; //注意结束的时候要手动释放监听器
     private static Channel<string> _channel;
@@ -13,7 +15,7 @@ public static class Program
 
     private static async Task Main()
     {
-        Init("G:\\Project\\.test_data_area\\CFP_Input");
+        Init();
 
         _process = TakeAndProcessFromChannel();
         try
@@ -30,24 +32,37 @@ public static class Program
         }
     }
 
-    private static void Init(string dirPath)
+    private static void Init()
     {
-        _watcher = new FileSystemWatcher(dirPath);
-        _watcher.NotifyFilter = NotifyFilters.FileName;
-        _watcher.Filter = "*.txt";
-        // 监听器缓冲区溢出处理
-        _watcher.Error += (s, e) => Console.WriteLine($"Watcher 出错：{e.GetException()}");
-        _watcher.InternalBufferSize = 64 * 1024;
-        _watcher.EnableRaisingEvents = true;
-        _watcher.Created += WriteIntoChannel;
+        try
+        {
+            JsonNode? config = JsonNode.Parse(File.ReadAllText("config.json"));
+            _inputPath = config?["INPUT_DIR"]?.GetValue<string>();
+            _outputPath = config?["OUTPUT_DIR"]?.GetValue<string>();
+            if (_inputPath == null || _outputPath == null)
+                throw new ArgumentException();
+            
+            _watcher = new FileSystemWatcher(_inputPath);
+            _watcher.NotifyFilter = NotifyFilters.FileName;
+            _watcher.Filter = "*.txt";
+            // 监听器缓冲区溢出处理
+            _watcher.Error += (s, e) => Console.WriteLine($"Watcher 出错：{e.GetException()}");
+            _watcher.InternalBufferSize = 64 * 1024;
+            _watcher.EnableRaisingEvents = true;
+            _watcher.Created += WriteIntoChannel;
 
-        _outputPath = "G:\\Project\\.test_data_area\\CFP_Output";
+            _channel = Channel.CreateBounded<string>(100);
 
-        _channel = Channel.CreateBounded<string>(100);
+            _cts = new CancellationTokenSource();
 
-        _cts = new CancellationTokenSource();
+            Console.CancelKeyPress += Shutdown;
 
-        Console.CancelKeyPress += Shutdown;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 
     private static async Task WaitUntilReady(string path, CancellationToken token)
@@ -88,17 +103,22 @@ public static class Program
             Processor processor = new(filePath);
             processor.Process(_cts.Token);
             var rez = processor.GainResult();
+            
+            Dictionary<string,uint> userDict = ((Dictionary<string, uint>)rez[1]);
+            string topUsers = string.Join(", ", userDict.Where(kv => kv.Value == userDict.Values.Max()).Select(kv => kv.Key));
 
+            Dictionary<string, uint> debugLeveldict = ((Dictionary<string, uint>)rez[2]);
+            uint infoCnt = debugLeveldict.GetValueOrDefault<string,uint>("INFO",0);
+            uint warnCnt = debugLeveldict.GetValueOrDefault<string,uint>("WARN", 0);
+            uint errorCnt = debugLeveldict.GetValueOrDefault<string,uint>("ERROR", 0);
+            
             var content = $"File: {Path.GetFileName(filePath)}\n" +
                           $"Total lines: {rez[0]}\n" +
-                          $"Info: {((Dictionary<string, uint>)rez[2])["Info"]}\n" +
-                          $"Warn: {((Dictionary<string, uint>)rez[2])["Warn"]}\n" +
-                          $"Error: {((Dictionary<string, uint>)rez[2])["Error"]}\n" +
-                          $"UniqueUsers: {((Dictionary<string, uint>)rez[1]).Count}\n" +
-                          $"MostActiveUser: {((Dictionary<string, uint>)rez[1])
-                              .Where(kv => kv.Value == ((Dictionary<string, uint>)rez[1]).Values.Max())
-                              .Select(kv => kv.Key)
-                              .ToArray()}";
+                          $"Info: {infoCnt}\n" +
+                          $"Warn: {warnCnt}\n" +
+                          $"Error: {errorCnt}\n" +
+                          $"UniqueUsers: {userDict.Count}\n" +
+                          $"MostActiveUser: {topUsers}";
             await File.WriteAllTextAsync(
                 Path.Combine(_outputPath, Path.GetFileNameWithoutExtension(filePath) + ".output.txt"), content);
         }
