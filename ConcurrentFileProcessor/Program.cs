@@ -106,9 +106,17 @@ public static class Program
             await WaitUntilReady(filePath, _cts.Token);
             _cts.Token.ThrowIfCancellationRequested();
             Processor processor = new(filePath);
-            processor.Process(_cts.Token);
-            var rez = processor.GainResult();
-
+            object[] rez;
+            try
+            {
+                processor.Process(_cts.Token);
+                rez = processor.GainResult();
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine($"[Program] {filePath} 处理失败，原因：{e}");
+                continue;
+            }
             Dictionary<string, uint> userDict = ((Dictionary<string, uint>)rez[1]);
             string topUsers = userDict.Count == 0
                 ? "N/A"
