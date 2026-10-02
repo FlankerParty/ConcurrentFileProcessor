@@ -42,20 +42,19 @@ public static class Program
             if (_inputPath == null || _outputPath == null)
                 throw new ArgumentException();
             
+            _channel = Channel.CreateBounded<string>(100);
+            _cts = new CancellationTokenSource();
+            Console.CancelKeyPress += Shutdown;
+            
             _watcher = new FileSystemWatcher(_inputPath);
             _watcher.NotifyFilter = NotifyFilters.FileName;
             _watcher.Filter = "*.txt";
             // 监听器缓冲区溢出处理
-            _watcher.Error += (s, e) => Console.WriteLine($"Watcher 出错：{e.GetException()}");
             _watcher.InternalBufferSize = 64 * 1024;
-            _watcher.EnableRaisingEvents = true;
             _watcher.Created += WriteIntoChannel;
+            _watcher.Error += (s, e) => Console.WriteLine($"Watcher 出错：{e.GetException()}");
+            _watcher.EnableRaisingEvents = true;
 
-            _channel = Channel.CreateBounded<string>(100);
-
-            _cts = new CancellationTokenSource();
-
-            Console.CancelKeyPress += Shutdown;
 
         }
         catch (Exception e)
