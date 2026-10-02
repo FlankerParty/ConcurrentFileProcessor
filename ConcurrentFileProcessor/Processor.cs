@@ -25,13 +25,19 @@ public class Processor
             {
                 token.ThrowIfCancellationRequested();
                 _rowCnt++;
+                
                 var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if(parts.Length == 0)
+                    continue;
+                
                 // C# 字典对未创建的键值对可写（创建）不可读，应当指定一个默认值
                 _debugLevelCnt[parts[0]] = _debugLevelCnt.GetValueOrDefault(parts[0]) + 1;
-                if (parts.Length < 3)
-                    continue;
-                string name = parts[2].Split("=")[1];
-                _userCnt[name] = _userCnt.GetValueOrDefault(name) + 1;
+
+                if (parts[^1].Contains("user="))
+                {
+                    string name = parts[^1].Split("=")[1];
+                    _userCnt[name] = _userCnt.GetValueOrDefault(name) + 1;
+                }
             }
         }
         catch (OperationCanceledException oce)
